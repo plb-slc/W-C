@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Channel Distortion</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        #canvas2 {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+        }
+        .graphics-container {
+            position: absolute;
+            top: 40%;
+            left: 60%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            justify-content: space-evenly;
+            width: 100vw;
+            pointer-events: none;
+        }
+        .graphic {
+            width: 600px;
+            height: 200px;
+        }
+        .graphic2 {
+            width: 200px;
+            height: 200px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas2"></canvas>
+    <div class="graphics-container">
+        <img src="graphic1.svg" class="graphic" id="left-graphic" alt="Left Graphic" style="color: aqua;" >
+        <img src="graphic2b.svg" class="graphic2" id="center-graphic" alt="Center Graphic" style="color: aquamarine;">
+        <img src="graphic3.svg" class="graphic" id="right-graphic" alt="Right Graphic" style="color: azure;">
+    </div>
+    <script src="text.js"></script>
+    
+    <canvas id="distortionCanvas"></canvas>
+
+    <!-- Video with autoplay, loop, and muted attributes -->
+    <video id="backgroundVideo" loop muted autoplay playsinline style="display: none;">
+        <source src="your-video.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+
+    <script>
+        const canvas = document.getElementById('distortionCanvas');
+        const ctx = canvas.getContext('2d');
+        const video = document.getElementById('backgroundVideo');
+
+        // Resize canvas to fill the screen
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Cursor position tracking
+        let cursorX = 0;
+        window.addEventListener('mousemove', (e) => {
+            cursorX = e.clientX;
+        });
+
+        function draw() {
+            if (video.readyState >= video.HAVE_CURRENT_DATA) {
+                // Draw the video onto the canvas
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Get image data
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+
+                const centerX = canvas.width / 2;
+                const bufferWidth = canvas.width * 0.3; // 10% buffer in the center
+                const leftBuffer = centerX - bufferWidth / 2;
+                const rightBuffer = centerX + bufferWidth / 2;
+
+                // Calculate intensity for channel amplification
+                const intensity = cursorX < centerX
+                    ? Math.max(0, 1 - cursorX / centerX) // Left side intensity
+                    : Math.max(0, 1 - (canvas.width - cursorX) / centerX); // Right side intensity
+
+                // Calculate stretching factor based on proximity to the edges
+                const stretchFactor = cursorX < centerX
+                    ? Math.max(1, 1 + (centerX - cursorX) / centerX)
+                    : Math.max(1, 1 + (cursorX - centerX) / centerX);
+
+                for (let y = 0; y < canvas.height; y++) {
+                    for (let x = 0; x < canvas.width; x++) {
+                        const index = (y * canvas.width + x) * 4;
+
+                        // Skip buffer area only when cursor is within the buffer
+                        if (x >= leftBuffer && x <= rightBuffer && cursorX > leftBuffer && cursorX < rightBuffer) {
+                            continue;
+                        }
+
+                        if (cursorX < centerX) {
+                            // Distort red channel on the left
+                            data[index] = Math.min(255, data[index] + intensity * 255);
+
+                            // Apply stretching effect
+                            const offset = Math.floor((x - centerX) * stretchFactor);
+                            const stretchedIndex = ((y * canvas.width) + (centerX + offset)) * 4;
+                            if (stretchedIndex >= 0 && stretchedIndex < data.length) {
+                                data[stretchedIndex] = data[index];
+                            }
+                        } else {
+                            // Distort green channel on the right
+                            data[index + 1] = Math.min(255, data[index + 1] + intensity * 255);
+
+                            // Apply stretching effect
+                            const offset = Math.floor((x - centerX) * stretchFactor);
+                            const stretchedIndex = ((y * canvas.width) + (centerX + offset)) * 4;
+                            if (stretchedIndex >= 0 && stretchedIndex < data.length) {
+                                data[stretchedIndex + 1] = data[index + 1];
+                            }
+                        }
+                    }
+                }
+
+                // Update the canvas with the distorted image data
+                ctx.putImageData(imageData, 0, 0);
+            }
+
+            // Request the next animation frame
+            requestAnimationFrame(draw);
+        }
+
+        // Start the video and rendering
+        video.addEventListener('canplay', () => {
+            video.play().catch((error) => {
+                console.error('Error trying to play the video:', error);
+            });
+            draw();
+        });
+    </script>
+</body>
+</html>
